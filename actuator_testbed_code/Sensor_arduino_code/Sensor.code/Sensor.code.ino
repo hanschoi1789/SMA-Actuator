@@ -11,6 +11,7 @@ Encoder myEnc(2, 3);
 const float resolution_mm = 0.04;
 
 void setup() {
+
   Serial.begin(115200); 
   scale.begin(DOUT, CLK);
   scale.set_scale(calibration_factor);
@@ -28,7 +29,6 @@ void loop() {
   // 2. HX711 데이터가 준비되었을 때만 (약 12.5ms 마다) 출력
   if (scale.is_ready()) {
     float force = scale.get_units(1); // 80Hz 모드이므로 1회만 읽음
-
     // 3. 출력 형식 최적화 (단위 명칭 포함)
     
     Serial.print(displacement, 3); 
