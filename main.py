@@ -33,8 +33,8 @@ class MainWindow(QMainWindow):
         self.last_pwm = 0
         self.last_fan = False
         # 캐싱 변수 추가
-        self.last_disp=0.0
-        self.last_force=0.0
+        self.last_disp=None
+        self.last_force=None
 
         # 제어 상태 변수 (Apply를 눌러야 갱신됨)
         self.current_pwm = 0
@@ -375,6 +375,9 @@ class MainWindow(QMainWindow):
         self.force_data.append(self.last_force)
 
     def handle_new_data(self, elapsed, temp, fan, pwm):
+        # 시리얼 데이터가 아직 한 번도 안 들어왔다면 튀는 것을 방지하기 위해 0 대신 None 혹은 skip
+        d_val = self.last_disp if self.last_disp is not None else 0.0
+        f_val = self.last_force if self.last_force is not None else 0.0
         #can 워커가 보내준 시간 대신 기준 시간 사용
         actual_elapsed= time.time()-self.base_time
         self.time_data.append(actual_elapsed)
@@ -393,7 +396,7 @@ class MainWindow(QMainWindow):
 
         if self.csv_writer:
             try:
-                self.csv_writer.writerow([f"{elapsed:.3f}", f"{temp:.2f}", pwm, f"{self.last_disp:.3f}", f"{self.last_force:.2f}"])
+                self.csv_writer.writerow([f"{actual_elapsed:.3f}", f"{temp:.2f}", pwm, f"{d_val:.3f}", f"{f_val:.2f}"])
             except Exception:
                 pass
 
