@@ -18,7 +18,7 @@ void setup() {
   scale.tare();
   
   // 시작 시 확인 메시지
-  Serial.println("Data Start (80Hz Mode)");
+  //Serial.println("Data Start (80Hz Mode)");
 }
 
 void loop() {

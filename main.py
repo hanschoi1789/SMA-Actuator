@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         for p in [self.disp_plot_widget, self.force_plot_widget]:
             p.enableAutoRange(axis='x', enable=True)  # X축 자동 조절
             p.enableAutoRange(axis='y', enable=True)  # Y축 자동 조절
-
+            p.setAutoVisible(x=True,y=True);
         # 2. 하단 패널
         control_panel = QHBoxLayout()
         main_layout.addLayout(control_panel, stretch=1)
@@ -408,7 +408,13 @@ class MainWindow(QMainWindow):
         # 1. 상단: 변위와 힘 업데이트
             self.disp_line.setData(self.ser_time_data, self.disp_data)
             self.force_line.setData(self.ser_time_data, self.force_data)
-
+        # [수정 4] 그래프가 자동으로 최신 시간을 따라가도록 X축 강제 이동
+            # 데이터의 마지막 시간값을 가져옴
+            last_t = self.ser_time_data[-1]
+            
+            # (옵션 A) 전체 데이터를 다 보고 싶으면 아래 줄 주석 해제
+            self.disp_plot_widget.setXRange(0, last_t)
+            
         if self.time_data:
         # 2. 중간: 온도 및 타겟 온도 업데이트
             self.temp_line.setData(self.time_data, self.temp_data)
