@@ -69,28 +69,7 @@ class MainWindow(QMainWindow):
         self.initUI()
         # 주의: __init__ 에서 통신이나 로깅을 바로 시작하지 않음 (Start 버튼 대기)
 
-    def init_csv_logger(self):
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.current_log_name = f"log_{timestamp}"
-            
-            filename = f"{self.current_log_name}.csv"
-            self.csv_file = open(filename, mode='w', newline='', encoding='utf-8')
-            self.csv_writer = csv.writer(self.csv_file)
-            self.csv_writer.writerow(["Time(sec)", "Temperature(C)", "PWM(%)","Displacement(mm)","Force(N)"])
-            print(f"CSV Logging started: {filename}")
-        except Exception as e:
-            print(f"Failed to open CSV file: {e}")
-
-    def save_snapshot(self):
-        if self.current_log_name:
-            try:
-                pixmap = self.grab()
-                image_filename = f"{self.current_log_name}.png"
-                pixmap.save(image_filename, 'png')
-                print(f"Snapshot saved: {image_filename}")
-            except Exception as e:
-                print(f"Failed to save snapshot: {e}")
+   
 
     def initUI(self):
         central_widget = QWidget()
@@ -264,7 +243,39 @@ class MainWindow(QMainWindow):
         
         grp_control.setLayout(layout_control)
         control_panel.addWidget(grp_control)
+    def manual_save(self):
+        # 1. 파일 이름 결정
+        user_input = self.edit_filename.text().strip()
+        if not user_input:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename_base = f"log_{timestamp}"
+        else:
+            filename_base = user_input
 
+        # 경로 설정
+        csv_path = f"data_logs/{filename_base}.csv"
+        img_path = f"data_logs/{filename_base}.png"
+
+        try:
+            # 2. CSV 저장
+            with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Time(sec)", "Temperature(C)", "PWM(%)"])
+                for i in range(len(self.time_data)):
+                    writer.writerow([
+                        f"{self.time_data[i]:.3f}", 
+                        f"{self.temp_data[i]:.2f}", 
+                        self.pwm_data[i]
+                    ])
+
+            # 3. 스크린샷 저장
+            pixmap = self.grab()
+            pixmap.save(img_path, 'png')
+
+            QMessageBox.information(self, "Save Success", f"Saved successfully!\nLocation: data_logs/\nFile: {filename_base}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save: {e}")
     # [추가] 시스템 시작 함수
     def start_system(self):
         # 1. UI 상태 변경
@@ -279,7 +290,7 @@ class MainWindow(QMainWindow):
         self.base_time = time.time()
 
         # 3. CSV 로거 시작
-        self.init_csv_logger()
+        
 
         # 시리얼 워커를 먼저, 그리고 독립적으로 시작
         try:
@@ -320,11 +331,6 @@ class MainWindow(QMainWindow):
         self.serworker.stop()
         self.tx_timer.stop()
         self.plot_timer.stop()
-        
-        if self.csv_file:
-            self.save_snapshot()
-            self.csv_file.close()
-            self.csv_file = None
 
     def emergency_stop(self):
         print("!!! EMERGENCY STOP !!!")
@@ -344,12 +350,6 @@ class MainWindow(QMainWindow):
         except:
             pass
 
-        if self.csv_file:
-            self.save_snapshot()
-            self.csv_file.close()
-            self.csv_file = None
-            print("CSV File Closed.")
-
         self.btn_stop.setText("STOPPED")
         self.btn_stop.setEnabled(False)
         self.btn_apply.setEnabled(False) # 정지 후 적용 불가
@@ -358,7 +358,7 @@ class MainWindow(QMainWindow):
         self.lbl_pwm.setText("PWM: 0% (STOP)")
         self.lbl_pwm.setStyleSheet("font-size: 20px; font-weight: bold; color: red;")
         
-        QMessageBox.warning(self, "System Stopped", "Current cut (PWM 0) and logging stopped.\nSnapshot Saved.")
+        QMessageBox.warning(self, "System Stopped", "Emergency Stop! Use 'SAVE DATA' button to save logs.")
 
     def closeEvent(self, event):
         self.stop_all()
@@ -394,11 +394,6 @@ class MainWindow(QMainWindow):
         self.last_pwm = pwm
         self.last_fan = bool(fan)
 
-        if self.csv_writer:
-            try:
-                self.csv_writer.writerow([f"{actual_elapsed:.3f}", f"{temp:.2f}", pwm, f"{d_val:.3f}", f"{f_val:.2f}"])
-            except Exception:
-                pass
 
     def update_ui(self):
         if not self.time_data and not self.ser_time_data:
@@ -412,9 +407,8 @@ class MainWindow(QMainWindow):
             # 데이터의 마지막 시간값을 가져옴
             last_t = self.ser_time_data[-1]
             
-            # (옵션 A) 전체 데이터를 다 보고 싶으면 아래 줄 주석 해제
             self.disp_plot_widget.setXRange(0, last_t)
-            
+
         if self.time_data:
         # 2. 중간: 온도 및 타겟 온도 업데이트
             self.temp_line.setData(self.time_data, self.temp_data)
@@ -460,20 +454,4 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    
-    # Ctrl+C (SIGINT) 시그널 처리 함수
-    def signal_handler(sig, frame):
-        print("\nCtrl+C detected! Closing safely...")
-        # 창을 닫으면 자동으로 가 호출되어closeEvent 스냅샷 저장 및 CSV 닫기가 수행됨
-        window.close() 
-
-    # 1. 시그널 핸들러 등록
-    signal.signal(signal.SIGINT, signal_handler)
-
-    # 2. 파이썬 인터프리터가 시그널을 주기적으로 확인할 수 있도록 더미 타이머 실행
-    # (이게 없으면 PyQt 이벤트 루프 때문에 Ctrl+C가 바로 안 먹힐 수 있음)
-    timer = QTimer()
-    timer.start(500)
-    timer.timeout.connect(lambda: None) 
-
     sys.exit(app.exec_())
