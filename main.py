@@ -177,7 +177,14 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "System Stopped", "Emergency Stop! Save logs if needed.")
 
     def manual_save(self):
-        """CSV 및 스크린샷 저장 (main-buttonver.py 로직 반영)"""
+        # 1. 데이터 존재 여부 확인 (둘 중 하나라도 있으면 진행)
+        can_exists = len(self.time_data) > 0
+        ser_exists = len(self.ser_time_data) > 0
+
+        if not can_exists and not ser_exists:
+            QMessageBox.warning(self, "No Data", "No Data available to save")
+            return
+
         user_input = self.edit_filename.text().strip()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_base = user_input if user_input else f"log_{timestamp}"
@@ -186,22 +193,33 @@ class MainWindow(QMainWindow):
         img_path = f"data_logs/{filename_base}.png"
 
         try:
+            # 더 긴 리스트를 기준으로 잡거나, 시리얼 데이터를 우선함
+            max_len = max(len(self.time_data), len(self.ser_time_data))
+            
             with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Time(sec)", "Temp(C)", "PWM(%)", "Force(N)", "Disp(mm)"])
-                for i in range(len(self.time_data)):
-                    writer.writerow([
-                        f"{self.time_data[i]:.3f}", 
-                        f"{self.temp_data[i]:.2f}", 
-                        self.pwm_data[i],
-                        f"{self.force_data[i] if i < len(self.force_data) else 0:.2f}",
-                        f"{self.disp_data[i] if i < len(self.disp_data) else 0:.2f}"
-                    ])
-            self.grab().save(img_path, 'png')
-            QMessageBox.information(self, "Save Success", f"Saved to data_logs/{filename_base}")
-        except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Failed: {e}")
+                writer.writerow(["Index", "Time_CAN(s)", "Temp(C)", "PWM(%)", "Time_Ser(s)", "Force(N)", "Disp(mm)"])
+                
+                for i in range(max_len):
+                    row = [i]
+                    # CAN 데이터 채우기
+                    if i < len(self.time_data):
+                        row.extend([f"{self.time_data[i]:.3f}", f"{self.temp_data[i]:.2f}", self.pwm_data[i]])
+                    else:
+                        row.extend(["", "", ""])
+                    
+                    # 시리얼 데이터 채우기
+                    if i < len(self.ser_time_data):
+                        row.extend([f"{self.ser_time_data[i]:.3f}", f"{self.force_data[i]:.2f}", f"{self.disp_data[i]:.2f}"])
+                    else:
+                        row.extend(["", "", ""])
+                    
+                    writer.writerow(row)
 
+            self.grab().save(img_path, 'png')
+            QMessageBox.information(self, "Success", "Data Saved Successfully.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save data: {e}")
     def handle_serial_data(self, disp, force):
         elapsed = time.time() - self.base_time
         self.last_disp = disp
