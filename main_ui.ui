@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>868</width>
-    <height>575</height>
+    <width>968</width>
+    <height>771</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -77,7 +77,7 @@
        </layout>
       </item>
       <item>
-       <layout class="QVBoxLayout" name="verticalLayout_2">
+       <layout class="QVBoxLayout" name="verticalLayout_2" stretch="1,2,2">
         <property name="spacing">
          <number>20</number>
         </property>
@@ -86,7 +86,7 @@
           <property name="maximumSize">
            <size>
             <width>16777215</width>
-            <height>200</height>
+            <height>16777215</height>
            </size>
           </property>
           <property name="font">
@@ -102,19 +102,6 @@
            <property name="sizeConstraint">
             <enum>QLayout::SetMaximumSize</enum>
            </property>
-           <item row="0" column="0">
-            <widget class="QLabel" name="lbl_static_temp">
-             <property name="font">
-              <font>
-               <weight>50</weight>
-               <bold>false</bold>
-              </font>
-             </property>
-             <property name="text">
-              <string>Temperature:</string>
-             </property>
-            </widget>
-           </item>
            <item row="0" column="1">
             <widget class="QLabel" name="lbl_temp">
              <property name="font">
@@ -125,19 +112,6 @@
              </property>
              <property name="text">
               <string>0.0 °C</string>
-             </property>
-            </widget>
-           </item>
-           <item row="1" column="0" colspan="2">
-            <widget class="QLabel" name="lbl_fan">
-             <property name="font">
-              <font>
-               <weight>50</weight>
-               <bold>false</bold>
-              </font>
-             </property>
-             <property name="text">
-              <string>FAN: OFF</string>
              </property>
             </widget>
            </item>
@@ -154,6 +128,32 @@
              </property>
             </widget>
            </item>
+           <item row="1" column="0" colspan="2">
+            <widget class="QLabel" name="lbl_fan">
+             <property name="font">
+              <font>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string>FAN: OFF</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="lbl_static_temp">
+             <property name="font">
+              <font>
+               <weight>50</weight>
+               <bold>false</bold>
+              </font>
+             </property>
+             <property name="text">
+              <string>Temperature:</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </widget>
         </item>
@@ -162,7 +162,7 @@
           <property name="maximumSize">
            <size>
             <width>16777215</width>
-            <height>350</height>
+            <height>16777215</height>
            </size>
           </property>
           <property name="font">
@@ -350,8 +350,8 @@ QPushButton:pressed {
          <widget class="QGroupBox" name="grp_save">
           <property name="maximumSize">
            <size>
-            <width>600</width>
-            <height>100</height>
+            <width>16777215</width>
+            <height>16777215</height>
            </size>
           </property>
           <property name="font">
@@ -367,6 +367,90 @@ QPushButton:pressed {
            <property name="sizeConstraint">
             <enum>QLayout::SetMaximumSize</enum>
            </property>
+           <item>
+            <widget class="QPushButton" name="btn_log_start">
+             <property name="styleSheet">
+              <string notr="true">QPushButton {
+    background-color: #2ECC71; /* 배경색 (초록색) */
+    color: white;              /* 글자색 (흰색) */
+    border-radius: 5px;        /* 모서리 둥글게 */
+    font-weight: bold;         /* 글자 진하게 */
+    padding: 5px;
+}
+
+/* 마우스를 올렸을 때 색상 변화 */
+QPushButton:hover {
+    background-color: #27AE60;
+}
+
+/* 클릭했을 때 색상 변화 */
+QPushButton:pressed {
+    background-color: #1E8449;
+}</string>
+             </property>
+             <property name="text">
+              <string>START LOGGING</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_log_stop">
+             <property name="styleSheet">
+              <string notr="true">QPushButton {
+    background-color: #E74C3C; /* 배경색 (빨간색) */
+    color: white;              /* 글자색 (흰색) */
+    border-radius: 5px;        /* 모서리 둥글게 */
+    font-weight: bold;         /* 글자 진하게 */
+    padding: 5px;
+}
+
+/* 마우스를 올렸을 때 색상 변화 */
+QPushButton:hover {
+    background-color: #C0392B;
+}
+
+/* 클릭했을 때 색상 변화 */
+QPushButton:pressed {
+    background-color: #A93226;
+}</string>
+             </property>
+             <property name="text">
+              <string>STOP LOGGING</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_log_reset">
+             <property name="styleSheet">
+              <string notr="true">/* Reset 버튼: 어두운 노란색 (Amber) */
+QPushButton#btn_log_reset {
+    background-color: #FFA000;  /* 진한 노란색/호박색 */
+    color: #000000;             /* 가독성을 위해 글자는 검은색 */
+    border-radius: 4px;
+    font-weight: bold;
+    padding: 5px;
+    border: 1px solid #E69100;
+}
+
+QPushButton#btn_log_reset:hover {
+    background-color: #FFB300;  /* 마우스 올리면 살짝 밝아짐 */
+}
+
+QPushButton#btn_log_reset:pressed {
+    background-color: #CC8400;  /* 클릭 시 더 어두워짐 */
+}
+
+/* 버튼이 비활성화(Disabled) 되었을 때 */
+QPushButton#btn_log_reset:disabled {
+    background-color: #BDBDBD;
+    color: #757575;
+}</string>
+             </property>
+             <property name="text">
+              <string>RESET </string>
+             </property>
+            </widget>
+           </item>
            <item>
             <widget class="QLabel" name="label_fname">
              <property name="text">
