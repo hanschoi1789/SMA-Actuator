@@ -10,13 +10,16 @@ class CanWorker(QThread):
     data_received = pyqtSignal(float, float, int, int)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self): 
+        """init함수는 인스턴스 생성 시 무조건 실행하는 함수. 따로 호출하거나 start하지 않아도 됨."""
         super().__init__()
         self.running = False
         self.bus = None
         self.start_time = 0
 
     def run(self):
+        """QThread내부의 시스템에 따라 start()가 호출되면 운영체제한테 새 공간(Thread)를 달라고 하고
+        그 공간 안에서 run함수를 실행. 따라서 main함수에서 start()시 호출."""
         """수신 루프 (백그라운드)"""
         # 1. CAN 초기화
         try:
@@ -54,6 +57,7 @@ class CanWorker(QThread):
         os.system("sudo ip link set can0 down")
 
     def send_control_message(self, pwm, fan_on, pid_enable, target_temp):
+        """사용자 정의함수.이름,기능,실행시점도 작성자의 자유"""
         """명령 전송 (조용히 전송만 함)"""
         if not self.bus:
             return
