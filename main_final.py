@@ -23,6 +23,15 @@ class MainWindow(QMainWindow):
         # 기본 설정
         self.setWindowTitle("Thermal Control System (UI Load Ver.)")
         
+        # 로깅 상태 변수 추가
+        self.is_logging = False
+
+        # 2. 독립 기록용 리스트 (START/STOP/RESET에 반응)
+        self.log_buffer = {
+            'time': [], 'temp': [], 'pwm': [], 'target': [],
+            'ser_time': [], 'force': [], 'disp': []
+        }
+
         # 데이터 저장소 (기존 코드 유지)
         self.time_data = []
         self.temp_data = []
@@ -45,6 +54,12 @@ class MainWindow(QMainWindow):
         self.current_pid_mode = False
         self.current_target = 0.0
         self.base_time = time.time()
+
+        # 새로운 UI 시그널 연결
+        self.btn_log_start.clicked.connect(self.start_logging)
+        self.btn_log_stop.clicked.connect(self.stop_logging)
+        self.btn_log_reset.clicked.connect(self.reset_logging_data)
+        self.btn_save.clicked.connect(self.manual_save) # 기존 저장 버튼
 
         # [추가] 데이터 저장 폴더 확인
         if not os.path.exists("data_logs"):
@@ -175,9 +190,39 @@ class MainWindow(QMainWindow):
         self.lbl_pwm.setText("PWM: 0% (STOP)")
         self.lbl_pwm.setStyleSheet("font-size: 20px; font-weight: bold; color: red;")
         QMessageBox.warning(self, "System Stopped", "Emergency Stop! Save logs if needed.")
+    
+    def start_logging(self):
+        """로깅 시작: 이제부터 들어오는 데이터를 리스트에 저장함"""
+        self.is_logging = True
+        self.btn_log_start.setEnabled(False)
+        self.btn_log_stop.setEnabled(True)
+        print("Recording Started...")
 
+    def stop_logging(self):
+        """로깅 중단: 데이터 수집을 멈춤 (저장은 SAVE 버튼으로 따로 진행)"""
+        self.is_logging = False
+        self.btn_log_start.setEnabled(True)
+        self.btn_log_stop.setEnabled(False)
+        print("Recording Stopped.")
+
+    def reset_logging_data(self):
+        """중요: 그래프는 놔두고 '저장할 데이터'만 비웁니다."""
+        reply = QMessageBox.question(self, 'Reset Log Data', 
+                                    "Clear only the recorded log data? (Graphs will remain)",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            for key in self.log_buffer:
+                self.log_buffer[key].clear()
+            print("Log buffer cleared. You can start a new recording.")
     def manual_save(self):
-        """CSV 및 스크린샷 저장 (main-buttonver.py 로직 반영)"""
+        # 1. 데이터 존재 여부 확인 (둘 중 하나라도 있으면 진행)
+        can_exists = len(self.time_data) > 0
+        ser_exists = len(self.ser_time_data) > 0
+
+        if not can_exists and not ser_exists:
+            QMessageBox.warning(self, "No Data", "No Data available to save")
+            return
+
         user_input = self.edit_filename.text().strip()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_base = user_input if user_input else f"log_{timestamp}"
@@ -188,20 +233,30 @@ class MainWindow(QMainWindow):
         try:
             with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Time(sec)", "Temp(C)", "PWM(%)", "Force(N)", "Disp(mm)"])
-                for i in range(len(self.time_data)):
-                    writer.writerow([
-                        f"{self.time_data[i]:.3f}", 
-                        f"{self.temp_data[i]:.2f}", 
-                        self.pwm_data[i],
-                        f"{self.force_data[i] if i < len(self.force_data) else 0:.2f}",
-                        f"{self.disp_data[i] if i < len(self.disp_data) else 0:.2f}"
-                    ])
+                writer.writerow(["Time", "Temp", "PWM", "Force", "Disp"])
+                
+                # log_buffer 데이터를 사용하여 저장
+                # 데이터 개수가 다를 수 있으므로 안전하게 처리
+                max_len = max(len(self.log_buffer['time']), len(self.log_buffer['ser_time']))
+                for i in range(max_len):
+                    row = []
+                    # CAN 데이터
+                    if i < len(self.log_buffer['time']):
+                        row.extend([self.log_buffer['time'][i], self.log_buffer['temp'][i], self.log_buffer['pwm'][i]])
+                    else: row.extend(["", "", ""])
+                    # Serial 데이터
+                    if i < len(self.log_buffer['ser_time']):
+                        row.extend([self.log_buffer['force'][i], self.log_buffer['disp'][i]])
+                    else: row.extend(["", ""])
+                    
+                    writer.writerow(row)
+            # --- 2. PNG 스크린샷 저장 ---
             self.grab().save(img_path, 'png')
-            QMessageBox.information(self, "Save Success", f"Saved to data_logs/{filename_base}")
-        except Exception as e:
-            QMessageBox.critical(self, "Save Error", f"Failed: {e}")
 
+            QMessageBox.information(self, "Success", f"Successfully saved:\nCSV: {csv_path}\nPNG: {img_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+        
     def handle_serial_data(self, disp, force):
         elapsed = time.time() - self.base_time
         self.last_disp = disp
@@ -209,6 +264,11 @@ class MainWindow(QMainWindow):
         self.ser_time_data.append(elapsed)
         self.disp_data.append(disp)
         self.force_data.append(force)
+        # [로깅] 독립 기록
+        if self.is_logging:
+            self.log_buffer['ser_time'].append(elapsed)
+            self.log_buffer['disp'].append(disp)
+            self.log_buffer['force'].append(force)
 
     def handle_new_data(self, elapsed, temp, fan, pwm):
         actual_elapsed = time.time() - self.base_time
@@ -224,6 +284,12 @@ class MainWindow(QMainWindow):
         self.last_temp = temp
         self.last_pwm = pwm
         self.last_fan = bool(fan)
+        # [로깅] START LOGGING 상태일 때만 별도 버퍼에 기록
+        if self.is_logging:
+            self.log_buffer['time'].append(actual_elapsed)
+            self.log_buffer['temp'].append(temp)
+            self.log_buffer['pwm'].append(pwm)
+            self.log_buffer['target'].append(self.current_target if self.current_pid_mode else float('nan'))
 
     def update_ui(self):
         if not self.time_data and not self.ser_time_data:
