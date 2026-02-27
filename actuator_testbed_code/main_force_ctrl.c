@@ -56,15 +56,15 @@ DMA_HandleTypeDef hdma_usart3_tx;
 
 /* USER CODE BEGIN PV */
 System_typedef system;
-extern PID_Manager_typedef pid;
+extern PID_Manager_typedef pid;   /*PID제어기 전체를 제어,pid.h에서*/
 
-Databuf_FDCAN_typedef data_fdcan;
+Databuf_FDCAN_typedef data_fdcan;   /*Can통신용 데이터 임시 저장소,fdcan.h에서*/
 
-static FLASH_EraseInitTypeDef EraseInitStruct;
-param_union param;
-param_union param_flash;
+static FLASH_EraseInitTypeDef EraseInitStruct;  /*MCU 내부의 FLASH 메모리를 지울 때 사용*/
+param_union param;      /*실시간 작업용,동작 중 pwm값을 바꾸거나 계산할 때*/
+param_union param_flash;  /*플레시 메모리에서 읽어온 데이터를 임시로 담아두거나, 플레시에 쓰기 직전의 데이터를 담아두는 버퍼*/
 
-extern MAX31855_typedef tmc;
+extern MAX31855_typedef tmc;  /*SMA의 온도를 실시간으로 측정하는 센서 모듈을 가리키는 변수,max31855.h*/
 
 /* USER CODE END PV */
 
@@ -88,40 +88,40 @@ static void MX_TIM4_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void delay_nop(uint32_t n)
+void delay_nop(uint32_t n)  /*아무것도 하지 않고 대기.(polling 방식)*/
 {
 	for (; n > 0; n--)
 		__NOP();
 }
 
-void delay_us(uint32_t n)
+void delay_us(uint32_t n)  /*NOP함수의 실행시간+for문의 조건을 읽는 시간도 있기 때문에 이를 고려하여 8을 곱함.*/
 {
 	for (n=n*8; n > 0; n--)
 		__NOP();
 }
 
 //Flash Control------------------------------------------------------------------------------------
-void Flash_Erase(uint32_t erase_page_add, uint32_t erase_page_num)
+void Flash_Erase(uint32_t erase_page_add, uint32_t erase_page_num)   /*시작 주소와 지울 페이지의 개수를 인자로 받는다*/
 {
-	uint32_t PAGEError = 0;
+	uint32_t PAGEError = 0;  /*에러 발생시 코드를 저장할 변수 초기화*/
 //
-	EraseInitStruct.TypeErase   	= FLASH_TYPEERASE_PAGES;
-	EraseInitStruct.Banks			= FLASH_BANK_1;
+	EraseInitStruct.TypeErase   	= FLASH_TYPEERASE_PAGES;  /*페이지 단위로 지우겠다는 설정*/
+	EraseInitStruct.Banks			= FLASH_BANK_1;              
 	EraseInitStruct.Page			= erase_page_add;
 	EraseInitStruct.NbPages			= erase_page_num;
 //
-	if (HAL_FLASHEx_Erase(&EraseInitStruct, &PAGEError) != HAL_OK)
+	if (HAL_FLASHEx_Erase(&EraseInitStruct, &PAGEError) != HAL_OK)  /*HAL_FLASHEx_Erase로 실제 지우기 실행, 오류시 시스템 정지 */
 		Error_Handler();
 }
 
-void Flash_Write(uint32_t address, uint64_t *write_data, uint16_t length)
+void Flash_Write(uint32_t address, uint64_t *write_data, uint16_t length)  
 {
-	uint32_t address_cnt = address;
-	uint16_t write_cnt = 0;
+	uint32_t address_cnt = address;  /*기록할 주소를 저장하는 변수*/
+	uint16_t write_cnt = 0;      /*몇 번째 데이터를 쓰고 있는지 셀 카운터*/
 
-	while (write_cnt < length)
+	while (write_cnt < length)    
 	{
-		if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, address_cnt, write_data[write_cnt]) == HAL_OK)
+		if (HAL_FLASH_Program(FLASH_TYPEPROGRAM_DOUBLEWORD, address_cnt, write_data[write_cnt]) == HAL_OK) /*address_cnt에 write_data의 데이터값을 저장.*/
 			address_cnt = address_cnt + 8;
 		else
 			Error_Handler();
@@ -136,24 +136,28 @@ void Flash_Read(uint32_t address, uint64_t *read_data, uint16_t length)
 
 	while (read_cnt < length)
 	{
-		read_data[read_cnt++] = *(__IO uint64_t *)address_cnt;
+		read_data[read_cnt++] = *(__IO uint64_t *)address_cnt; /*address_cnt를 64비트 포인터로 변환, address_cnt에 있는 데이터 값을 불러오도록 함.*/
 		address_cnt = address_cnt + 8;
 	}
 }
 
 //FDCAN-------------------------------------------------------------------------------------------
-void Manual_Control (uint8_t ch)
+void Manual_Control (uint8_t ch)  /*수동제어,MFSC나 PID가 꺼졌을 때 활성화된다.*/
 {
 	// PWM 값 업데이트
-	*system.pnt_pwm[ch] = system.ctrl_param_now.pwm[ch];
-	system.state_pwm[ch] = system.ctrl_param_now.pwm[ch];
-	printf("CH %u PWM updated %u -> %u\r\n", ch, system.ctrl_param_save.pwm[ch], system.ctrl_param_now.pwm[ch]);
+  // system.pnt_pwm(32비트)에는 타이머의 CCR 레지스터의 주소가 저장된다. ctrl_param_now.pwm(8비트)가 32비트로 형변환되면서 CCR레지스터의 비트값으로 저장된다.
+  //CCR레지스터는 타이머 값과 일치할 때 1->0이 되도록 한다. 예를 들어 타이머가 0부터 100까지 센다 하면 10%의 듀티비를 주고자 할 때, CCR에 10을 넣으면 됨.
+	*system.pnt_pwm[ch] = system.ctrl_param_now.pwm[ch]; 
+  //레지스터에 직접 값을 넣을 경우, 값을 읽어오려면 매번 하드웨어 주소에 접근해야 한다. 따라서 메모리에 하드웨어에 보낸 값을 메모해둔다. 
+	system.state_pwm[ch] = system.ctrl_param_now.pwm[ch];  
+  //디버깅용 출력
+	printf("CH %u PWM updated %u -> %u\r\n", ch, system.ctrl_param_save.pwm[ch], system.ctrl_param_now.pwm[ch]);  
 	
 	// [팬 상태 업데이트] 현재 입력받은 값을 즉시 하드웨어 반영하도록 함
   if (system.ctrl_param_now.fan[ch] == 1)
   {
-    FSW_on(ch);
-    system.state_fsw[ch] = FAN_ON;
+    FSW_on(ch); //FAN을 킨다.
+    system.state_fsw[ch] = FAN_ON; //시스템 상태변수를 FAN_ON으로 기록한다.
   }
   else
   {
@@ -161,74 +165,102 @@ void Manual_Control (uint8_t ch)
     system.state_fsw[ch] = FAN_OFF;
   }
 	// 상태확인용 출력 메시지
+  // (조건식)? "ON":"OFF"->조건식이 참이면 ON,거짓이면 OFF를 출력
   printf("CH %u Manual Update: PWM=%u, FAN=%s\r\n", ch, system.state_pwm[ch], (system.state_fsw[ch] == FAN_ON) ? "ON" : "OFF");
   // 제어 파라미터 동기화
   system.ctrl_param_save.fan[ch] = system.ctrl_param_now.fan[ch];
 }
 
-void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
+//FDCAN3 하드웨어의 RXFIFO에 새로운 메시지가 한 개 이상 도착했을 때 호출된다.
+/*호출 로직
+1단계: 초기화 및 인터럽트 설정. 
+-main함수에서 FDCAN_Init을 호출
+-수신할 메시지 ID목록 생성
+-FDCAN_ConFig_Rx를 호출하여 ID필터 설정 및 ActiveNotification으로 인터럽트 활성화(FIFOO에 새 메시지 수신 시 인터럽트 발생)
+
+2단계: 메시지 수신 및 인터럽트 발생.
+-while(1)돌던 중 외부에서 can메시지 도착 시 FDCAN3모듈이 이를 감지하여 RX FIFOO에 저장
+(저장하는 과정은 하드웨어가 자동적으로 수행, 단 FDCAN_Init함수를 호출하여 HAL_FDCAN_Start로 동작모드를 수행하도록 하고 HAL_FDCAN_ConfigFilter로 메시지 필터설정이 되어있어야 함)
+-이후 CPU에게 인터럽트 발생 신호를 보냄. CPU는 FDCAN3_IT0_IRQHandler로 점프
+-핸들러는 HAL_FDCAN_IRQHandler(&hfdcan3)를 호출하여 처리를 라이브러리에 맡김
+
+3단계:콜백함수 호출.
+HAL라이브러리에서 인터럽트 발생 원인 분석.-> 새 메시지 확인 후 콜백함수 호출(이때 라이브러리가 콜백함수에 인자를 전해준다.)*/
+void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs) 
+//hfdcan: 어느 FDCAN장치인지에 대한 정보(FDCAN1,2,3 중에서), RxFifo0ITS: RX의 FIFO0 수신함에서 발생한 인터럽트들과 관련된 정보(ex)NEW MESSAGE, FIFO FULL, MESSAGE LOST)
 {
-	if((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == RESET)
+  //새로운 메시지가 오지 않았다면 함수 종료.
+	if((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == RESET) // FDCAN_IT_RX_FIFO0_NEW_MESSAGE는 1이 저장되어 있음. 인터럽트 비트와 and 연산 시 새 메시지인지 판별 가능.
     {
         return;
     }
 
     /* Retrieve Rx messages from RX FIFO0 */
-	FDCAN_RxHeaderTypeDef rx_header;
-	uint8_t rx_data[64];
-    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK)
+	FDCAN_RxHeaderTypeDef rx_header;   //메시지 ID, 길이정보
+	uint8_t rx_data[64];      //실제 데이터(64바이트)
+  //hfdcan 주소를 보고 FIFO0로 찾아감.거기에 저장된 ID,길이 정보는 rx_header에, 실제 데이터는 rx_data에 저장
+    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rx_header, rx_data) != HAL_OK) 
     {
         Error_Handler();
         return;
     }
 	
     //Dongsu.2025.04.10
-	if ((rx_header.Identifier == CAN3_RXID_COMMAND) && (rx_header.DataLength == FDCAN_DLC_BYTES_64))
+	if ((rx_header.Identifier == CAN3_RXID_COMMAND) && (rx_header.DataLength == FDCAN_DLC_BYTES_64)) 
+  //CAN3_RXID_COMMAND: 메시지의 주소가 0x400이 맞는지, FDCAN_DLC_BYTES_64: STM32 HAL라이브러리에 정의된 상수, FDCAN통신 규격의 데이터의 길이가 64바이트라는 의미.
 	{
 		/* 기존 제어 메시지 처리 (0x400) */
 	    /* 기존 처리 로직 - 변경 없음 */
-		if (system.state_level == SYSTEM_GO)
-        {
-			memcpy(&system.ctrl_param_now, rx_data, RX_BYTE_CTRL_PARAM);
-			for (uint8_t i = 0; i < CTRL_CH; i++)
+		if (system.state_level == SYSTEM_GO)  //시스템이 작동 중일 때
+    {
+			memcpy(&system.ctrl_param_now, rx_data, RX_BYTE_CTRL_PARAM);   //memcpy는 C언어 표준 라이브러리에 저장된 함수   
+      /*system.ctrl_param_now에는 pwm, fan의 on-off여부, enable_pid, targe_temp에 관한 정보가 들어와야 한다. 
+      rx_data에서 받은 데이터를 sytem.ctrl_param_now에 30바이트만큼 복사한다.
+      (PC에서 0~5바이트는 pwm값, 6~11바이트는 fan의 on-off값, 12~17바이트는 pid_enable값, 18~29바이트까지는 목표온도값을 보내기 때문)*/
+			for (uint8_t i = 0; i < CTRL  _CH; i++)     //6개 채널 순회하며 업데이트
 			{
 			// PID 제어 활성화 상태 처리
+      // PID 활성화 상태가 바뀌었는지 확인(enable_pid): 전역 변수는 전원을 켜면 자동으로 초기화된다.
 				if (pid.enable_pid[i] != system.ctrl_param_now.enable_pid[i])
 				{
-					pid.enable_pid[i] = system.ctrl_param_now.enable_pid[i];
+					pid.enable_pid[i] = system.ctrl_param_now.enable_pid[i]; //상태동기화
 
-					if (pid.enable_pid[i])
+					if (pid.enable_pid[i]) //이제 막 켜진 상태
 					{
 					    // PID 제어 활성화 시 초기화 작업
-						pid.params[i].u_old = 0.0f;
-						pid.params[i].last_error = 0.0f;
-						pid.params[i].safety_mode = 0;
+						pid.params[i].u_old = 0.0f;      //이전 제어 입력값 0으로 리셋  
+						pid.params[i].last_error = 0.0f;    //이전 오차값 0으로 리셋
+						pid.params[i].safety_mode = 0;      //안전모드
 
 						// 목표 온도 설정 (0.25도 단위로 변환)
+            // 통신값 / 4.0 = 실제온도
 						float new_target = (float)system.ctrl_param_now.target_temp[i] / 4.0f;
-						pid.params[i].setpoint = new_target;
+						pid.params[i].setpoint = new_target;  
 
 						printf("CH %u PID enabled, Target temp: %.2f°C\r\n", i, pid.params[i].setpoint);
 					}
-				    else if (!pid.enable_pid[i])
-				    {
-				        printf("CH %u PID disabled\r\n", i);
-				        Manual_Control(i);
+          else if (!pid.enable_pid[i]) //이제 막 꺼진 상태
+          {
+              printf("CH %u PID disabled\r\n", i);
+              Manual_Control(i);     //수동제어 호출
 
-				        if (pid.params[i].safety_mode > 0) {
-				            printf("CH %u Safety mode reset by PID disable command\r\n", i);
-				            pid.params[i].safety_mode = 0;
-				            Update_Fan_Status(i);
-				        }
-				    }
+              //안전모드 초기화 로직
+              if (pid.params[i].safety_mode > 0) 
+              {
+                  printf("CH %u Safety mode reset by PID disable command\r\n", i);
+                  pid.params[i].safety_mode = 0;
+                  Update_Fan_Status(i);
+              }
+          }
 				}
 				// PID 활성 상태에서 목표 온도 변경
+        /**/
 				else if (pid.enable_pid[i] && ((float)system.ctrl_param_now.target_temp[i]/4.0f != pid.params[i].setpoint))
 				{
-					  float new_target = (float)system.ctrl_param_now.target_temp[i] / 4.0f;
+					  float new_target = (float)system.ctrl_param_now.target_temp[i] / 4.0f; //새로운 목표온도로 갱신
 
 					  pid.params[i].setpoint = new_target;
-					  if (pid.params[i].setpoint > pid.params[i].max_temp)
+					  if (pid.params[i].setpoint > pid.params[i].max_temp) //max_temp넘을 경우 max_temp로 설정
 					  {
 						  pid.params[i].setpoint = pid.params[i].max_temp;
 					  }
@@ -242,67 +274,77 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 			}
 			LED1_toggle;
 			system.ctrl_param_save = system.ctrl_param_now;
-        }
+    }
 	}
 	else if ((rx_header.Identifier == CAN3_RXID_GAIN_UPDATE) && (rx_header.DataLength == FDCAN_DLC_BYTES_64))
 	{
 		/* 버퍼 데이터를 PID 튜닝 구조체로 복사 */
-	    memcpy(&pid.buf_fdcan_pid_tuning.uint8, rx_data, RX_BYTE_PID_TUNING);
 
 	    /* 채널 번호 유효성 검사 */
 	    uint8_t ch = pid.buf_fdcan_pid_tuning.struc.channel;
 	    if (ch < CTRL_CH)
 	    {
-	    	/* PID 게인 값 설정 */
-	        pid.params[ch].lambda = pid.buf_fdcan_pid_tuning.struc.kp;
-	        pid.params[ch].alpha = pid.buf_fdcan_pid_tuning.struc.ki;
-	        pid.params[ch].gain = pid.buf_fdcan_pid_tuning.struc.kd;
-	        printf("PID Gains updated for CH %u: Kp=%.2f, Ki=%.4f, Kd=%.4f\r\n", ch, pid.params[ch].lambda, pid.params[ch].alpha, pid.params[ch].gain);
+      /* PID 게인 값 설정 */
+        pid.params[ch].lambda = pid.buf_fdcan_pid_tuning.struc.kp;
+        pid.params[ch].alpha = pid.buf_fdcan_pid_tuning.struc.ki;
+        pid.params[ch].gain = pid.buf_fdcan_pid_tuning.struc.kd;
+        printf("PID Gains updated for CH %u: Kp=%.2f, Ki=%.4f, Kd=%.4f\r\n", ch, pid.params[ch].lambda, pid.params[ch].alpha, pid.params[ch].gain);
 
-	        LED2_toggle;  // PID 튜닝 메시지 수신 표시
-	        }
-        else
-        {
-        	printf("Error: Invalid channel number %u\r\n", ch);
-        }
+        LED2_toggle;  // PID 튜닝 메시지 수신 표시
+       }
+      else
+      {
+        printf("Error: Invalid channel number %u\r\n", ch);
+      }
 	}
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if(htim->Instance == htim4.Instance)
+	if (htim->Instance == htim4.Instance)  //[TIM4 인터럽트 발생] 센서로부터 받은 값을 CAN메시지로 PC에 보내는 과정
 	{
-		TMC_Scan (CTRL_CH);
+		TMC_Scan (CTRL_CH);   //온도 센서 스캔. ADC를 통해 연결된 모든 채널의 전압 값을 읽어와서 물리적인 온도값으로 변환하는 상수
 
-		for (uint8_t i = 0; i < CTRL_CH; i++)
+		for (uint8_t i = 0; i < CTRL_CH; i++)   
 		{
-			pid.shared_data.temp_data[i] = tmc.temp_ext14[i];
+			pid.shared_data.temp_data[i] = tmc.temp_ext14[i];  //실제 온도값 저장(실수), 이 데이터를 읽고 히터를 켤지말지 결정한다. (shared_data는 공용 저장소의 역할)
 
       // 센서 유효성 즉시 검사
-      Check_Temperature_Sensor(i, pid.shared_data.temp_data[i]);
-
-			system.buf_fdcan_tx.struc.fan[i] = system.state_fsw[i];
-			system.buf_fdcan_tx.struc.pwm[i] = *system.pnt_pwm[i];
-			system.buf_fdcan_tx.struc.temp[i] = tmc.temp_ext14_raw[i];
+      Check_Temperature_Sensor(i, pid.shared_data.temp_data[i]); 
+      
+      /*pc모니터링을 위한 패킹작업(fan 상태값, pwm 출력값, 온도 측정값) 
+      ->buf_fdcan_tx는 공용체이기 때문에 fan,pwm,temp값이 uint8에도 저장된다.
+      uint8은 24바이트의 배열이며, pwm, fan, temp값이 각각6,6,12바이트씩 이 배열에 저장된다.(구조체 내부 순서대로)*/
+			system.buf_fdcan_tx.struc.fan[i] = system.state_fsw[i];       
+			system.buf_fdcan_tx.struc.pwm[i] = *system.pnt_pwm[i];        
+			system.buf_fdcan_tx.struc.temp[i] = tmc.temp_ext14_raw[i];         //온도는 정수값을 저장
 		}
 
     // 타임스탬프 및 플래그 설정
-    pid.shared_data.temp_timestamp = HAL_GetTick();
+    pid.shared_data.temp_timestamp = HAL_GetTick();      
     pid.shared_data.new_temp_data = 1;  // 새 데이터 플래그 설정
+    
 
-		FDCAN_TxHeaderTypeDef tx_header;
-		FDCAN_Config_TX(&tx_header, CAN3_TXID_STATE, FDCAN_DLC_BYTES_24);
-		if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan3, &tx_header, system.buf_fdcan_tx.uint8)!= HAL_OK)
+		FDCAN_TxHeaderTypeDef tx_header;         
+		FDCAN_Config_TX(&tx_header, CAN3_TXID_STATE, FDCAN_DLC_BYTES_24);  //tx_header 구조체에 ID 및 데이터 길이 입력
+    /* 함수 실행과정
+    1. 메모리 복사: 라이브러리 안의 FDCAN_CopyMessageToRam 함수가 작동하여,
+    uint8[24]데이터를 STM32내부의 FDCAN전용 Message RAM 안의 FiFo 설정구역으로 그대로 복사한다.
+    2. 전송 트리거:TXBAR레지스터의 특정 비트가 1로 바뀌면서, FDCAN 하드웨어가 CAN버스의 상태를 살피다가,
+    버스가 비어 있다면 즉시 전송을 시작하게 된다. 
+    3. 결과적으로 PC는 PWM6개-FAN6개-TEMP6개 순서로 나열된 24바이트 패킷을 수신하게 됨. 
+    4. 만약 통신 모듈이 꺼져 있거나, Fifo 구역이 꽉차있다면 HAL_error발생*/
+		if (HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan3, &tx_header, system.buf_fdcan_tx.uint8)!= HAL_OK)  
 		{
 			Error_Handler();
 		}
-
+ 
 	}
 
-	else if(htim->Instance == htim5.Instance)
+	else if(htim->Instance == htim5.Instance)  //[TIM5 인터럽트 발생]   pwm 및 팬 제어
 	{
 		static uint8_t startup_counter = 0;
-		if (pid.startup_phase) {
+		if (pid.startup_phase) {  //전원이 켜진 후 센서 데이터가 안정화될 때까지 약 1초간 제어 연산을 유보 (키자마자 나오는 튀는 값 반영X)
 		    startup_counter++;
 		    if (startup_counter >= 10) {  // 10번의 TIM5 인터럽트 후 (약 1초)
 		        pid.startup_phase = 0;
@@ -313,13 +355,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     for (uint8_t i = 0; i < CTRL_CH; i++)
 		{
       // 1. 안전 온도 확인 (최우선 처리)
-      bool in_safety_mode = Check_Safety_Temperature(i, pid.shared_data.temp_data[i]);
+      bool in_safety_mode = Check_Safety_Temperature(i, pid.shared_data.temp_data[i]); //안전모드 상태면 1 아니면 0을 반환
 
       // 2. PID 활성화 상태 및 안전 모드 확인
       if (pid.enable_pid[i] && !in_safety_mode)
       {
-        float current_temp = pid.shared_data.temp_data[i];
-        float target_temp = pid.params[i].setpoint;
+        float current_temp = pid.shared_data.temp_data[i]; //TIM4로 읽은 센서의 온도값이 들어있음.(TIM4가 먼저 실행되어야 함.)
+        float target_temp = pid.params[i].setpoint;      //
 
         //센서 이상 확인
         //bool sensor_ok = Check_Temperature_Rise_Rate(i, current_temp);
@@ -328,24 +370,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         if (sensor_ok)
         {
           // 제어 연산 수행
-          float ctrl_output = Calculate_Ctrl(&pid.params[i], current_temp, i);
-  				Set_PWM_Output(i, (uint8_t)ctrl_output);
+          float ctrl_output = Calculate_Ctrl(&pid.params[i], current_temp, i);    //듀티비를 계산
+  				Set_PWM_Output(i, (uint8_t)ctrl_output);     //듀티비를 CCR레지스터값에 입력.
 
 					// 5. 온도 기반 팬 제어
-					Control_Fan_By_Temperature(i, current_temp, target_temp);
+					Control_Fan_By_Temperature(i, current_temp, target_temp);   
         }
       }
     }
 	}
 }
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)     //외부 핀에 전기적 신호 변화가 감지되었을 때 CPU가 하던 일을 멈추고 이 함수로 점프
 {
 	if (GPIO_Pin == SW_Pin)
 	{
-		if (system.state_level == SYSTEM_READY)
+		if (system.state_level == SYSTEM_READY)  //준비상태라면 LED를 키고 동작으로 바꿈
 		{
-			LED1_on;
+			LED1_on;          
 //		    printf("Go!\r\n");
 		    system.state_level = SYSTEM_GO;
 //			HAL_NVIC_EnableIRQ(ADC1_RDY_EXTI_IRQn);
@@ -353,13 +395,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 //			Reg_Write_ADS8167(CMD_SET_BITS, ADSREG_ADD_SEQ_START, 0x01);
 //		    HAL_TIM_Base_Start_IT(&htim2);
 		}
-		else if (system.state_level == SYSTEM_GO)
+		else if (system.state_level == SYSTEM_GO)   //동작상태라면 LED를 끄고 준비상태로 바꿈
 		{
 //			HAL_TIM_Base_Stop_IT(&htim2);
 //			Reg_Write_ADS8167(CMD_SET_BITS, ADSREG_ADD_SEQ_ABORT, 0x01);
 
 //			HAL_NVIC_DisableIRQ(ADC1_RDY_EXTI_IRQn);
-			system.state_level = SYSTEM_READY;
+			system.state_level = SYSTEM_READY;      
 //		    printf("Stop!\r\n");
 			LED1_off;
 		}
@@ -412,7 +454,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 	setbuf(stdin, NULL);
 
-	system.pnt_pwm[0] = &TIM2->CCR4;
+	system.pnt_pwm[0] = &TIM2->CCR4;   //TIM은 타이머 관련 레지스터들의 구조체인 TIM_TypeDef를 가리키는 포인터이다.
 	system.pnt_pwm[1] = &TIM2->CCR1;
 	system.pnt_pwm[2] = &TIM3->CCR1;
 	system.pnt_pwm[3] = &TIM3->CCR2;
@@ -490,7 +532,7 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;  //system의 160MHz가 CPU 및 주변 장치 모두에 적용(1로 나누므로.)
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
