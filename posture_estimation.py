@@ -2,7 +2,7 @@ import os
 import joblib
 import numpy as np
 from collections import deque, Counter
-
+import xgboost as xg
 
 class PostureEstimator:
     # 상태 정의
@@ -26,22 +26,18 @@ class PostureEstimator:
         'r_thigh_omega_mean', 'r_thigh_omega_max', 'r_thigh_omega_min',
     ]
 
-    def __init__(self, model_path='xgboost_model.pkl'):
-        abs_path = os.path.abspath(model_path)
+    def __init__(self, model_path='xgboost_model.json', encoder_path='label_encoder.pkl'):
+        abs_model_path = os.path.abspath(model_path)
+        abs_encoder_path = os.path.abspath(encoder_path)
         print(f"[DEBUG] CWD: {os.getcwd()}")
-        print(f"[DEBUG] Loading model from: {abs_path}")
-
-        bundle = joblib.load(abs_path)
-        print(f"[DEBUG] Loaded type: {type(bundle)}")
-
-        if not isinstance(bundle, dict):
-            raise TypeError(
-                f"Expected dict bundle from train_model.py, got {type(bundle)}. "
-                f"Please retrain the model."
-            )
-
-        self.model = bundle['model']
-        self.encoder = bundle['encoder']
+        
+        # 1. XGBoost 모델 전용 함수로 JSON 로드
+        self.model = xgb.XGBClassifier()
+        self.model.load_model(abs_model_path)
+        
+        # 2. 라벨 인코더 로드
+        self.encoder = joblib.load(abs_encoder_path)
+        
         print(f"[PostureEstimator] ✅ Classes: {list(self.encoder.classes_)}")
         print(f"[PostureEstimator] ✅ Features ({len(self.FEATURE_ORDER)}): OK")
 

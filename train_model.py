@@ -46,8 +46,10 @@ def train():
     print(classification_report(y_test, predictions, target_names=le.classes_))
 
     # 5. 모델과 라벨 인코더를 딕셔너리로 묶어서 함께 저장 (추정 파일에서 둘 다 필요함)
-    joblib.dump({'model': model, 'encoder': le}, "xgboost_model.pkl")
-    print("💾 학습된 모델이 'xgboost_model.pkl'로 저장되었습니다.")
-
+    model.save_model("xgboost_model.json")
+    joblib.dump(le, "label_encoder.pkl")
+    
+    print("💾 학습된 모델('xgboost_model.json')과 인코더('label_encoder.pkl')가 저장되었습니다.")
+    
 if __name__ == '__main__':
     train()

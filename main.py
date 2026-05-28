@@ -89,7 +89,7 @@ class MainWindow(QMainWindow):
         
         
         # 타겟 힘 로우패스(EMA) 필터용 변수 추가
-        self.force_alpha = 0.3  # 필터 반응 속도 (0.01 ~ 1.0)
+        self.force_alpha = 0.01  # 필터 반응 속도 (0.01 ~ 1.0)
         self.filtered_target_force = 0.0 # 이전 필터링 결과 저장용
         
         # Force 제어 로깅 활성화 플래그
