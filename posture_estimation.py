@@ -2,7 +2,7 @@ import os
 import joblib
 import numpy as np
 from collections import deque, Counter
-import xgboost as xg
+import xgboost as xgb
 
 class PostureEstimator:
     # 상태 정의
@@ -110,20 +110,44 @@ class PostureEstimator:
         predicted = self.encoder.inverse_transform([pred_idx])[0]
 
         # 상태 머신 업데이트
+        # 상태 머신 업데이트
         if confidence >= self.CONF_THRESHOLD:
             self.verification_buffer.append(predicted)
             if len(self.verification_buffer) >= self.VERIFY_STEPS:
                 most_common = Counter(self.verification_buffer).most_common(1)[0][0]
                 self.current_posture = most_common
 
-                if most_common == "stoop lifting":
-                    self.state = self.STATE_LIFTING
+                if most_common in ["stoop lifting", "squat lifting"]:
+                    # 🌟 1. 최신 각도(Position) 데이터 추출
+                    current_waist_angle = self.waist_q[-1]
+                    current_l_thigh = self.l_thigh_q[-1]
+                    current_r_thigh = self.r_thigh_q[-1]
+                    
+                    # 🌟 2. 허벅지 평균 각도 계산
+                    avg_thigh_angle = (current_l_thigh + current_r_thigh) / 2.0
+                    
+                    # 🌟 3. 두 허벅지의 부호가 같은지 확인 (둘 다 음수이거나 둘 다 양수이면 곱했을 때 양수가 됨)
+                    is_same_sign = ((current_l_thigh+10) * (current_r_thigh+10)) > 0
+
+                    # 🌟 4. 임계값 로직 적용
+                    # 조건 A: 허리 각도의 절댓값이 10도 이상인가?
+                    # 조건 B: 허벅지 평균이 -10도 이하이고, 두 허벅지의 부호가 같은가?
+                    if (abs(current_waist_angle) >= 10.0) or (avg_thigh_angle <= -10.0 and is_same_sign):
+                        self.state = self.STATE_LIFTING
+                    else:
+                        self.state = self.STATE_OBSERVING
+                        
                 elif most_common == "walking":
                     self.state = self.STATE_WALKING
                 elif most_common == "standing":
                     self.state = self.STATE_STANDING
-                else:  # squat lifting 등
+                else:  
                     self.state = self.STATE_OBSERVING
+        else:
+            self.verification_buffer.clear()
+            self.state = self.STATE_OBSERVING
+            self.current_posture = "estimating..." # 불확실함을 명시
+            
 
         return {
             'state': self.state,
