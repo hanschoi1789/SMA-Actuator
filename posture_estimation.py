@@ -109,45 +109,47 @@ class PostureEstimator:
         confidence = float(proba[pred_idx])
         predicted = self.encoder.inverse_transform([pred_idx])[0]
 
-        # 상태 머신 업데이트
-        # 상태 머신 업데이트
+        # ==========================================
+        # 🌟 1. 물리적 각도 계산 (AI 결과와 무관하게 항상 계산)
+        # ==========================================
+        current_waist_angle = self.waist_q[-1]
+        current_l_thigh = self.l_thigh_q[-1]
+        current_r_thigh = self.r_thigh_q[-1]
+        avg_thigh_angle = (current_l_thigh + current_r_thigh) / 2.0
+        is_same_sign = ((current_l_thigh+10) * (current_r_thigh+10)) >= 0
+
+        # ==========================================
+        # 🌟 2. AI 상태 머신 업데이트 (Buffer 관리)
+        # ==========================================
         if confidence >= self.CONF_THRESHOLD:
             self.verification_buffer.append(predicted)
             if len(self.verification_buffer) >= self.VERIFY_STEPS:
                 most_common = Counter(self.verification_buffer).most_common(1)[0][0]
                 self.current_posture = most_common
-
-                if most_common in ["stoop lifting", "squat lifting"]:
-                    # 🌟 1. 최신 각도(Position) 데이터 추출
-                    current_waist_angle = self.waist_q[-1]
-                    current_l_thigh = self.l_thigh_q[-1]
-                    current_r_thigh = self.r_thigh_q[-1]
-                    
-                    # 🌟 2. 허벅지 평균 각도 계산
-                    avg_thigh_angle = (current_l_thigh + current_r_thigh) / 2.0
-                    
-                    # 🌟 3. 두 허벅지의 부호가 같은지 확인 (둘 다 음수이거나 둘 다 양수이면 곱했을 때 양수가 됨)
-                    is_same_sign = ((current_l_thigh+10) * (current_r_thigh+10)) > 0
-
-                    # 🌟 4. 임계값 로직 적용
-                    # 조건 A: 허리 각도의 절댓값이 10도 이상인가?
-                    # 조건 B: 허벅지 평균이 -10도 이하이고, 두 허벅지의 부호가 같은가?
-                    if (abs(current_waist_angle) >= 10.0) or (avg_thigh_angle <= -10.0 and is_same_sign):
-                        self.state = self.STATE_LIFTING
-                    else:
-                        self.state = self.STATE_OBSERVING
-                        
-                elif most_common == "walking":
-                    self.state = self.STATE_WALKING
-                elif most_common == "standing":
-                    self.state = self.STATE_STANDING
-                else:  
-                    self.state = self.STATE_OBSERVING
         else:
             self.verification_buffer.clear()
-            self.state = self.STATE_OBSERVING
-            self.current_posture = "estimating..." # 불확실함을 명시
+            self.current_posture = "estimating" # 불확실함을 명시
+
+        # ==========================================
+        # 🌟 3. 임계값(물리적 안전) 기반 최종 State 결정 (최우선 순위)
+        # ==========================================
+        # 조건 A: 허리 각도의 절댓값이 10도 이상인가?
+        # 조건 B: 허벅지 평균이 -10도 이하인가?
+        if (abs(current_waist_angle) >= 10.0) or (avg_thigh_angle <= -10.0):
+            self.state = self.STATE_LIFTING
             
+            # 리프팅 각도인데, AI가 올바른 리프팅 자세를 확정 짓지 못했다면 강제로 estimating 처리
+            if not is_same_sign or self.current_posture not in ['squat lifting', 'stoop lifting']:
+                self.current_posture = 'estimating'
+                
+        else:
+            # 안전 각도 내에 있을 때만 AI의 결과를 State에 반영
+            if self.current_posture == 'walking':
+                self.state = self.STATE_WALKING
+            elif self.current_posture == 'standing':
+                self.state = self.STATE_STANDING
+            else:
+                self.state = self.STATE_OBSERVING             
 
         return {
             'state': self.state,

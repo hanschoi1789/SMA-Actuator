@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         
         # 🌟 30ms 주기로 동작하는 메인 통합 제어 루프 타이머 추가
         self.control_timer = QTimer(self)
-        self.control_timer.setInterval(30)
+        self.control_timer.setInterval(10)
         self.control_timer.timeout.connect(self.process_control_loop)
         
         # 🌟 Force Mapper + Posture Estimator
@@ -177,15 +177,20 @@ class MainWindow(QMainWindow):
             # ✅ 임피던스 제어 활성화
             raw_target_force = self.force_mapper.get_target_force(waist_angle, waist_velocity, self.current_lift_type)
             self.maintain_force = raw_target_force
-        else :
-            # 그 외 (Standing/Walking/Observing 등): 보조력 유지
-            raw_target_force = self.maintain_force
-        
-        # 5. EMA 로우패스 필터 (자세 전환 시 및 미분 노이즈 급변 방지)
-        self.filtered_target_force = (
+            self.filtered_target_force = (
             self.force_alpha * raw_target_force +
             (1.0 - self.force_alpha) * self.filtered_target_force
-        )
+            )
+        else :
+            # 그 외 (Standing/Walking/Observing 등): 보조력 유지
+            decay_step = 1.0  # 튜닝 포인트: 힘이 빠지는 속도 (단위: g/10ms)
+            
+            if self.filtered_target_force > decay_step:
+                self.filtered_target_force -= decay_step
+            elif self.filtered_target_force < -decay_step:
+                self.filtered_target_force += decay_step
+            else:
+                self.filtered_target_force = 0.0  # 0 근처에 도달하면 깔끔하게 0으로 고정
         
         # 6. Force 모드일 때 GUI 반영 + 로깅
         if self.ctrl_mode == MODE_FORCE:

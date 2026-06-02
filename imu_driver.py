@@ -168,10 +168,10 @@ class ImuWorker(QThread):
 
                         # 🌟 기존 [if sid == self.WAIST_ID:] 부분을 제거하고, 
                         # 모든 센서가 캘리브레이션 완료되었을 때 메인 GUI로 전체 딕셔너리 전송 및 터미널 출력
-                        if all(self.is_calibrated.values()):
+                        '''if all(self.is_calibrated.values()):
                             self.angle_received.emit(self.current_angles.copy(), self.current_vels.copy())
                             
-                            '''print(f"[IMU 각도] 허리(0): {self.current_angles[0]:6.2f}° | "
+                            print(f"[IMU 각도] 허리(0): {self.current_angles[0]:6.2f}° | "
                                   f"왼허벅지(1): {self.current_angles[1]:6.2f}° | "
                                   f"오른허벅지(2): {self.current_angles[2]:6.2f}°", end="\r")'''
                                  
