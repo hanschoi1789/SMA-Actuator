@@ -40,16 +40,16 @@ def train():
     predictions = model.predict(X_test)
     acc = accuracy_score(y_test, predictions)
     print(f"\n📊 검증 정확도(Accuracy): {acc * 100:.2f}%\n")
-    
+
     # 평가 리포트는 다시 사람이 보기 편하게 문자열로 출력
     print("상세 리포트:")
     print(classification_report(y_test, predictions, target_names=le.classes_))
 
     # 5. 모델과 라벨 인코더를 딕셔너리로 묶어서 함께 저장 (추정 파일에서 둘 다 필요함)
     model.save_model("xgboost_model.json")
-    joblib.dump(le, "label_encoder.pkl")
-    
+    joblib.dump(le, "label_encoder.pkl",protocol=2)
+
     print("💾 학습된 모델('xgboost_model.json')과 인코더('label_encoder.pkl')가 저장되었습니다.")
-    
+
 if __name__ == '__main__':
     train()
