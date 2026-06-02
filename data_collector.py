@@ -80,7 +80,8 @@ class DataCollector:
             'l_thigh_omega_min': min(self.l_thigh_vel_q),
             'r_thigh_omega_mean': sum(self.r_thigh_vel_q) / self.window_size,
             'r_thigh_omega_max': max(self.r_thigh_vel_q),
-            'r_thigh_omega_min': min(self.r_thigh_vel_q)
+            'r_thigh_omega_min': min(self.r_thigh_vel_q),
+            
         }
         self.dataset.append(row)
 

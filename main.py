@@ -45,7 +45,8 @@ class MainWindow(QMainWindow):
 
         # ── 데이터 저장소 ──
         self.time_data   = []
-        self.temp_data   = []
+        self.temp_data_ch_0  = []
+        self.temp_data_ch_1 = []
         self.target_data = []
         self.pwm_data    = []
 
@@ -63,7 +64,8 @@ class MainWindow(QMainWindow):
         self.imu_start_time = time.time()
         
         # ── 캐시 ──
-        self.last_temp  = 0.0
+        self.last_temp_ch0  = 0.0  # 🌟 CH0 최신 온도
+        self.last_temp_ch1  = 0.0  # 🌟 CH1 최신 온도
         self.last_pwm   = 0
         self.last_fan   = False
         self.last_force = 0.0
@@ -84,7 +86,11 @@ class MainWindow(QMainWindow):
         self.current_force_target = 0.0
         
         # 타겟 힘 로우패스(EMA) 필터용 변수 추가
-        self.force_alpha = 0.2  # 필터 반응 속도 (0.01 ~ 1.0)
+        self.stage1_force = 0.0
+        self.stage2_force = 0.0
+        
+        # 튜닝 파라미터 (2번 필터링되므로 기존보다 약간 높여야 응답성이 유지됨)
+        self.force_alpha = 0.3
         self.filtered_target_force = 0.0 # 이전 필터링 결과 저장용
         
         # Force 제어 로깅 활성화 플래그
@@ -113,7 +119,7 @@ class MainWindow(QMainWindow):
         self.imu_worker = ImuWorker(port=IMU_PORT, baudrate=IMU_BAUD)
         self.imu_worker.error_occurred.connect(self.handle_error)
         
-        # 🌟 30ms 주기로 동작하는 메인 통합 제어 루프 타이머 추가
+        # 🌟 10ms 주기로 동작하는 메인 통합 제어 루프 타이머 추가
         self.control_timer = QTimer(self)
         self.control_timer.setInterval(10)
         self.control_timer.timeout.connect(self.process_control_loop)
@@ -128,7 +134,7 @@ class MainWindow(QMainWindow):
         self.init_controls()
         
     def process_control_loop(self):
-        """🌟 30ms 주기로 IMU 데이터를 직접 Pull 해와서 자세 추정 및 힘 계산을 수행하는 함수"""
+        """🌟 10ms 주기로 IMU 데이터를 직접 Pull 해와서 자세 추정 및 힘 계산을 수행하는 함수"""
         if not hasattr(self, 'imu_worker') or not self.imu_worker.isRunning():
             return
             
@@ -173,28 +179,27 @@ class MainWindow(QMainWindow):
         self.current_confidence = posture_result['confidence']
         
         # 4. 자세에 따른 타겟 힘 계산 분기
-        if posture_result['state'] == PostureEstimator.STATE_LIFTING:
-            # ✅ 임피던스 제어 활성화
-            raw_target_force = self.force_mapper.get_target_force(waist_angle, waist_velocity, self.current_lift_type)
-            self.maintain_force = raw_target_force
-            self.filtered_target_force = (
-            self.force_alpha * raw_target_force +
-            (1.0 - self.force_alpha) * self.filtered_target_force
-            )
-        else :
-            # 그 외 (Standing/Walking/Observing 등): 보조력 유지
-            decay_step = 1.0  # 튜닝 포인트: 힘이 빠지는 속도 (단위: g/10ms)
+        is_current_lifting = (self.current_posture == PostureEstimator.STATE_LIFTING)
+        
+        if is_current_lifting:
             
-            if self.filtered_target_force > decay_step:
-                self.filtered_target_force -= decay_step
-            elif self.filtered_target_force < -decay_step:
-                self.filtered_target_force += decay_step
-            else:
-                self.filtered_target_force = 0.0  # 0 근처에 도달하면 깔끔하게 0으로 고정
+            raw_target_force = self.force_mapper.get_target_force(waist_angle, waist_velocity,self.current_lift_type)
+            
+        else :
+            raw_target_force = 0.0 
+
+        # 🌟 5. Double EMA (2차 로우패스 필터) 적용
+        # 1단: 목표값 변화를 1차 완화
+        self.stage1_force = (self.force_alpha * raw_target_force) + (1.0 - self.force_alpha) * self.stage1_force
+        
+        # 2단: 1단 값을 한 번 더 추종하여 완벽한 S-Curve(2차 곡선) 생성
+        self.stage2_force = (self.force_alpha * self.stage1_force) + (1.0 - self.force_alpha) * self.stage2_force
+
         
         # 6. Force 모드일 때 GUI 반영 + 로깅
         if self.ctrl_mode == MODE_FORCE:
-            self.current_force_target = self.filtered_target_force
+            # 최종 출력은 stage2_force를 사용
+            self.current_force_target = self.stage2_force
             mapped_force = self.current_force_target
             
             # SpinBox 업데이트 시 시그널 블록하여 무한 루프 방지
@@ -226,8 +231,8 @@ class MainWindow(QMainWindow):
         self.temp_plot_widget.setLabel("left", "Temperature (°C)")
         self.temp_plot_widget.showGrid(x=True, y=True)
         self.temp_plot_widget.addLegend()
-        self.temp_line = self.temp_plot_widget.plot(
-            pen=pg.mkPen('y', width=2), name="Current Temp")
+        self.temp_line_ch0 = self.temp_plot_widget.plot(pen=pg.mkPen('y', width=2), name="CH0 Temp")
+        self.temp_line_ch1 = self.temp_plot_widget.plot(pen=pg.mkPen('g', width=2), name="CH1 Temp")
         self.target_line = self.temp_plot_widget.plot(
             pen=pg.mkPen('r', width=2, style=Qt.DashLine), name="Target Temp")
 
@@ -265,8 +270,8 @@ class MainWindow(QMainWindow):
         self.ftemp_plot_widget.setLabel("bottom", "Time (s)")
         self.ftemp_plot_widget.showGrid(x=True, y=True)
         self.ftemp_plot_widget.setXLink(self.force_plot_widget)
-        self.ftemp_line = self.ftemp_plot_widget.plot(
-            pen=pg.mkPen('y', width=2), name="Temp")
+        self.ftemp_line_ch0 = self.ftemp_plot_widget.plot(pen=pg.mkPen('y', width=2), name="CH0")
+        self.ftemp_line_ch1 = self.ftemp_plot_widget.plot(pen=pg.mkPen('g', width=2), name="CH1")
 
     # ──────────────────────────────────────────────────────────
     #  버튼/라디오 초기화
@@ -480,17 +485,20 @@ class MainWindow(QMainWindow):
 
     def handle_new_data(self, elapsed, temp_list, fan_list, pwm_list):
         ch   = DISPLAY_CH
-        temp = temp_list[ch]
+        temp_ch0 = temp_list[0]
+        temp_ch1 = temp_list[1]
         fan  = fan_list[ch]
         pwm  = pwm_list[ch]
 
         self.time_data.append(elapsed)
-        self.temp_data.append(temp)
+        self.temp_data_ch0.append(temp_ch0) # 🌟 CH0 저장
+        self.temp_data_ch1.append(temp_ch1) # 🌟 CH1 저장
         self.pwm_data.append(pwm)
         self.target_data.append(
             self.current_target if self.current_pid_mode else float('nan'))
 
-        self.last_temp = temp
+        self.last_temp_ch0 = temp_ch0
+        self.last_temp_ch1 = temp_ch1
         self.last_pwm  = pwm
         self.last_fan  = bool(fan)
 
@@ -517,7 +525,7 @@ class MainWindow(QMainWindow):
     # ──────────────────────────────────────────────────────────
 
     def update_ui(self):
-        self.lbl_temp.setText(f"{self.last_temp:.1f} °C")
+        self.lbl_temp.setText(f"CH0: {self.last_temp_ch0:.1f}°C | CH1: {self.last_temp_ch1:.1f}°C")
         self.lbl_pwm.setText(f"PWM: {self.last_pwm}%")
         self.lbl_force.setText(f"Force: {self.last_force:.2f} g")
         self.lbl_disp.setText(f"Disp:  {self.last_disp:.2f} mm")
@@ -540,17 +548,18 @@ class MainWindow(QMainWindow):
             display_lift = self.current_lift_type if self.current_posture == 'Lifting' else 'Waiting...'
             print(f"\r🚀 [실시간 추정] 상태: {self.current_posture:<10} | 동작: {display_lift:<15} | 신뢰도: {conf_val:5.1f}%   ", end="", flush=True)
 
-        if self.last_temp > 70.0:
-            self.lbl_temp.setStyleSheet("font-size: 28px; font-weight: bold; color: red;")
+        if self.last_temp_ch0 > 70.0 or self.last_temp_ch1 > 70.0:
+            self.lbl_temp.setStyleSheet("font-size: 20px; font-weight: bold; color: red;")
         else:
-            self.lbl_temp.setStyleSheet("font-size: 28px; font-weight: bold; color: #2196F3;")
+            self.lbl_temp.setStyleSheet("font-size: 20px; font-weight: bold; color: #2196F3;")
 
         self.lbl_fan.setText("FAN: ON" if self.last_fan else "FAN: OFF")
         self.lbl_fan.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {'green' if self.last_fan else 'gray'};")
 
         if self.ctrl_mode in (MODE_MANUAL, MODE_TEMP) and self.time_data:
             plot_time = self.time_data[-MAX_PLOT_POINTS:]
-            self.temp_line.setData(plot_time, self.temp_data[-MAX_PLOT_POINTS:])
+            self.temp_line_ch0.setData(plot_time, self.temp_data_ch0[-MAX_PLOT_POINTS:])
+            self.temp_line_ch1.setData(plot_time, self.temp_data_ch1[-MAX_PLOT_POINTS:])
             self.target_line.setData(plot_time, self.target_data[-MAX_PLOT_POINTS:])
             self.pwm_line.setData(plot_time, self.pwm_data[-MAX_PLOT_POINTS:])
 
@@ -566,7 +575,8 @@ class MainWindow(QMainWindow):
             if self.time_data:
                 plot_time = self.time_data[-MAX_PLOT_POINTS:]
                 self.fpwm_line.setData(plot_time, self.pwm_data[-MAX_PLOT_POINTS:])
-                self.ftemp_line.setData(plot_time, self.temp_data[-MAX_PLOT_POINTS:])
+                self.ftemp_line_ch0.setData(plot_time, self.temp_data_ch0[-MAX_PLOT_POINTS:])
+                self.ftemp_line_ch1.setData(plot_time, self.temp_data_ch1[-MAX_PLOT_POINTS:])
 
 
     # ──────────────────────────────────────────────────────────
@@ -582,10 +592,11 @@ class MainWindow(QMainWindow):
             with open(f"data_logs/{filename_base}.csv",
                       mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Time(sec)", "Temperature(C)", "PWM(%)"])
+                writer.writerow(["Time(sec)", "Temp_CH0(C)", "Temp_CH1(C)", "PWM(%)"])
                 for i in range(len(self.time_data)):
                     writer.writerow([f"{self.time_data[i]:.3f}",
-                                     f"{self.temp_data[i]:.2f}",
+                                     f"{self.temp_data_ch0[i]:.2f}",
+                                     f"{self.temp_data_ch1[i]:.2f}",
                                      self.pwm_data[i]])
 
             with open(f"data_logs/{filename_base}_force.csv",

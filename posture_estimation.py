@@ -14,7 +14,7 @@ class PostureEstimator:
     # 파라미터
     WINDOW_SIZE = 20
     VERIFY_STEPS = 3
-    CONF_THRESHOLD = 0.35
+    CONF_THRESHOLD = 0.70
 
     # 🌟 학습 데이터(imu_dataset.csv)와 정확히 동일한 컬럼 순서
     FEATURE_ORDER = [
@@ -24,6 +24,7 @@ class PostureEstimator:
         'waist_omega_mean', 'waist_omega_max', 'waist_omega_min',
         'l_thigh_omega_mean', 'l_thigh_omega_max', 'l_thigh_omega_min',
         'r_thigh_omega_mean', 'r_thigh_omega_max', 'r_thigh_omega_min',
+        'thigh_mean_diff'
     ]
 
     def __init__(self, model_path='xgboost_model.json', encoder_path='label_encoder.pkl'):
@@ -57,6 +58,8 @@ class PostureEstimator:
     def _extract_features(self):
         """data_collector.py의 _save_feature_row()와 100% 동일하게 계산"""
         N = self.WINDOW_SIZE
+        l_mean = sum(self.l_thigh_q) / N
+        r_mean = sum(self.r_thigh_q) / N
 
         feature_dict = {
             'waist_mean': sum(self.waist_q) / N,
@@ -75,6 +78,7 @@ class PostureEstimator:
             'r_thigh_omega_mean': sum(self.r_thigh_vel_q) / N,
             'r_thigh_omega_max': max(self.r_thigh_vel_q),
             'r_thigh_omega_min': min(self.r_thigh_vel_q),
+            'thigh_mean_diff': abs(l_mean - r_mean)
         }
 
         # 학습 시 컬럼 순서대로 정렬
@@ -117,6 +121,7 @@ class PostureEstimator:
         current_r_thigh = self.r_thigh_q[-1]
         avg_thigh_angle = (current_l_thigh + current_r_thigh) / 2.0
         is_same_sign = ((current_l_thigh+10) * (current_r_thigh+10)) >= 0
+        thigh_diff=abs(current_l_thigh-current_r_thigh)
 
         # ==========================================
         # 🌟 2. AI 상태 머신 업데이트 (Buffer 관리)
@@ -125,7 +130,6 @@ class PostureEstimator:
             self.verification_buffer.append(predicted)
             if len(self.verification_buffer) >= self.VERIFY_STEPS:
                 most_common = Counter(self.verification_buffer).most_common(1)[0][0]
-                self.current_posture = most_common
         else:
             self.verification_buffer.clear()
             self.current_posture = "estimating" # 불확실함을 명시
@@ -139,10 +143,13 @@ class PostureEstimator:
             self.state = self.STATE_LIFTING
             
             # 리프팅 각도인데, AI가 올바른 리프팅 자세를 확정 짓지 못했다면 강제로 estimating 처리
-            if not is_same_sign or self.current_posture not in ['squat lifting', 'stoop lifting']:
+            if thigh_diff>=10 or most_common not in ['squat lifting', 'stoop lifting']:
                 self.current_posture = 'estimating'
+            else:
+                self.current_posture = most_common
                 
         else:
+            self.current_posture = most_common
             # 안전 각도 내에 있을 때만 AI의 결과를 State에 반영
             if self.current_posture == 'walking':
                 self.state = self.STATE_WALKING
