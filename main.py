@@ -24,7 +24,7 @@ DISPLAY_CH  = 0          # 표시할 채널 (0~5)
 
 
 # 🌟 IMU 포트 설정 (윈도우 환경이시면 장치관리자 확인 후 'COMx'로 변경 필요)
-IMU_PORT = "/dev/ttyUSB0" 
+IMU_PORT = "/dev/ttyUSB1" 
 IMU_BAUD = 921600
 
 MODE_MANUAL = 0
@@ -32,7 +32,7 @@ MODE_TEMP   = 1
 MODE_FORCE  = 2
 MODE_CALIB  = 3
 
-MAX_PLOT_POINTS = 1000 # 50초 분량 정도
+MAX_PLOT_POINTS = 500 # 50초 분량 정도
 
 
 class MainWindow(QMainWindow):
@@ -57,10 +57,20 @@ class MainWindow(QMainWindow):
         self.angle_data = []         # 🌟 각도 데이터용 리스트
         self.target_force_data = []  # 🌟 타겟 힘 데이터용 리스트
         
+        #허벅지 각도 저장용
+        self.l_thigh_data = []
+        self.r_thigh_data = []
+        
         #IMUtest용 
         self.imu_time_data = []
         self.imu_target_data = []
         self.imu_angle_data = []
+        self.imu_start_time = time.time()
+        
+        # 🌟 추가: IMU 단독 구동 시 허벅지 각도 저장용 리스트
+        self.imu_l_thigh_data = []
+        self.imu_r_thigh_data = []
+        
         self.imu_start_time = time.time()
         
         # ── 캐시 ──
@@ -75,7 +85,9 @@ class MainWindow(QMainWindow):
         self.last_velocity = 0.0
         self.last_thigh_mean_angle = 0.0
         self.last_thigh_velocity = 0.0
-        self.last_thigh_time = time.time()
+        self.last_thigh_time = time.time()                               
+        self.last_l_thigh = 0.0 # 🌟 추가: 허벅지 최신 각도 기억용 변수
+        self.last_r_thigh = 0.0
 
         # ── 제어 상태 ──
         self.ctrl_mode            = MODE_MANUAL
@@ -90,7 +102,7 @@ class MainWindow(QMainWindow):
         self.stage2_force = 0.0
         
         # 튜닝 파라미터 (2번 필터링되므로 기존보다 약간 높여야 응답성이 유지됨)
-        self.force_alpha = 0.3
+        self.force_alpha = 0.4
         self.filtered_target_force = 0.0 # 이전 필터링 결과 저장용
         
         # Force 제어 로깅 활성화 플래그
@@ -102,7 +114,7 @@ class MainWindow(QMainWindow):
         self.tx_timer.timeout.connect(self.send_heartbeat)
 
         self.plot_timer = QTimer()
-        self.plot_timer.setInterval(50)
+        self.plot_timer.setInterval(10)
         self.plot_timer.timeout.connect(self.update_ui)
 
         # ── UART 워커 ──
@@ -158,6 +170,8 @@ class MainWindow(QMainWindow):
         r_thigh_vel    = vels_dict.get(2, 0.0)
         
         self.last_angle    = waist_angle
+        self.last_l_thigh  = l_thigh  # 🌟 추가
+        self.last_r_thigh  = r_thigh  # 🌟 추가
         self.last_velocity = waist_velocity
         
         # 2. 허벅지 평균/각속도 (UI 표시용)
@@ -212,6 +226,8 @@ class MainWindow(QMainWindow):
                 self.imu_time_data.append(elapsed)
                 self.imu_target_data.append(mapped_force)
                 self.imu_angle_data.append(waist_angle)
+                self.imu_l_thigh_data.append(l_thigh) # 🌟 추가
+                self.imu_r_thigh_data.append(r_thigh) # 🌟 추가
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_C:
@@ -359,12 +375,16 @@ class MainWindow(QMainWindow):
             self.force_data.clear()
             self.disp_data.clear()
             self.angle_data.clear()
+            self.l_thigh_data.clear() # 🌟 추가
+            self.r_thigh_data.clear() # 🌟 추가
             self.target_force_data.clear()
             
             self.imu_time_data.clear()
             self.imu_target_data.clear()
             if hasattr(self, 'imu_angle_data'):
                 self.imu_angle_data.clear()
+                self.imu_l_thigh_data.clear() # 🌟 추가
+                self.imu_r_thigh_data.clear() # 🌟 추가
             
             self.imu_start_time = time.time()
             self.is_force_logging = True
@@ -509,6 +529,8 @@ class MainWindow(QMainWindow):
             self.disp_data.append(displacement)
             
             self.angle_data.append(self.last_angle)
+            self.l_thigh_data.append(self.last_l_thigh) # 🌟 추가
+            self.r_thigh_data.append(self.last_r_thigh) # 🌟 추가
             self.target_force_data.append(self.current_force_target)
         
         self.last_force = force
@@ -602,30 +624,39 @@ class MainWindow(QMainWindow):
             with open(f"data_logs/{filename_base}_force.csv",
                       mode='w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Time(sec)", "Force(g)", "Displacement(mm)", "Angle(deg)", "Target_Force(g)"])
+                # 🌟 헤더에 허벅지 각도 열 추가
+                writer.writerow(["Time(sec)", "Force(g)", "Displacement(mm)", "Waist_Angle(deg)", "L_Thigh_Angle(deg)", "R_Thigh_Angle(deg)", "Target_Force(g)"])
                 
                 if len(self.force_time_data) > 0:
                     length = len(self.force_time_data)
                     for i in range(length):
                         a_val = self.angle_data[i] if i < len(self.angle_data) else 0.0
+                        l_val = self.l_thigh_data[i] if hasattr(self, 'l_thigh_data') and i < len(self.l_thigh_data) else 0.0 # 🌟 추가
+                        r_val = self.r_thigh_data[i] if hasattr(self, 'r_thigh_data') and i < len(self.r_thigh_data) else 0.0 # 🌟 추가
                         tf_val = self.target_force_data[i] if i < len(self.target_force_data) else 0.0
                         writer.writerow([
                             f"{self.force_time_data[i]:.3f}",
                             f"{self.force_data[i]:.3f}",
                             f"{self.disp_data[i]:.3f}",
                             f"{a_val:.2f}",
+                            f"{l_val:.2f}", # 🌟 추가
+                            f"{r_val:.2f}", # 🌟 추가
                             f"{tf_val:.2f}"
                         ])
                 else:
                     length = len(self.imu_time_data)
                     for i in range(length):
                         a_val = self.imu_angle_data[i] if hasattr(self, 'imu_angle_data') and i < len(self.imu_angle_data) else 0.0
+                        l_val = self.imu_l_thigh_data[i] if hasattr(self, 'imu_l_thigh_data') and i < len(self.imu_l_thigh_data) else 0.0 # 🌟 추가
+                        r_val = self.imu_r_thigh_data[i] if hasattr(self, 'imu_r_thigh_data') and i < len(self.imu_r_thigh_data) else 0.0 # 🌟 추가
                         tf_val = self.imu_target_data[i] if i < len(self.imu_target_data) else 0.0
                         writer.writerow([
                             f"{self.imu_time_data[i]:.3f}",
                             "0.000",
                             "0.000",
                             f"{a_val:.2f}",
+                            f"{l_val:.2f}", # 🌟 추가
+                            f"{r_val:.2f}", # 🌟 추가
                             f"{tf_val:.2f}"
                         ])
 

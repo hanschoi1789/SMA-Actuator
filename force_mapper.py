@@ -12,7 +12,6 @@ class ForceMapper:
         self.filtered_target_force = 0.0
         
         # 튜닝 파라미터
-        self.active_alpha = 0.8  # 리프팅 중 반응성 (0.0 ~ 1.0)
         self.decay_step = 5.0    # 리프팅 종료 후 감쇠 속도 (g/10ms)
 
     def get_target_force(self, current_angle, current_velocity=0.0, lift_type='stoop lifting'):

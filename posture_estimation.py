@@ -126,6 +126,7 @@ class PostureEstimator:
         # ==========================================
         # 🌟 2. AI 상태 머신 업데이트 (Buffer 관리)
         # ==========================================
+        most_common = self.current_posture
         if confidence >= self.CONF_THRESHOLD:
             self.verification_buffer.append(predicted)
             if len(self.verification_buffer) >= self.VERIFY_STEPS:
