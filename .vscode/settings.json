@@ -1,0 +1,17 @@
+{
+  "ROS2.distro": "foxy",
+  "python.autoComplete.extraPaths": [
+    "/home/kimm/wearable_robot_ws/build/wearable_robot_rqt_plugins",
+    "/home/kimm/wearable_robot_ws/install/wearable_robot_rqt_plugins/lib/python3.8/site-packages",
+    "/home/kimm/wearable_robot_ws/install/wearable_robot_interfaces/lib/python3.8/site-packages",
+    "/home/kimm/wearable_robot_ws/install/ros2_socketcan_msgs/lib/python3.8/site-packages",
+    "/opt/ros/foxy/lib/python3.8/site-packages"
+  ],
+  "python.analysis.extraPaths": [
+    "/home/kimm/wearable_robot_ws/build/wearable_robot_rqt_plugins",
+    "/home/kimm/wearable_robot_ws/install/wearable_robot_rqt_plugins/lib/python3.8/site-packages",
+    "/home/kimm/wearable_robot_ws/install/wearable_robot_interfaces/lib/python3.8/site-packages",
+    "/home/kimm/wearable_robot_ws/install/ros2_socketcan_msgs/lib/python3.8/site-packages",
+    "/opt/ros/foxy/lib/python3.8/site-packages"
+  ]
+}

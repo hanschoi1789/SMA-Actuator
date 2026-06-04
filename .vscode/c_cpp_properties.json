@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/kimm/wearable_robot_ws/install/wearable_robot_data_processing/include/**",
+        "/home/kimm/wearable_robot_ws/install/wearable_robot_interfaces/include/**",
+        "/home/kimm/wearable_robot_ws/install/wearable_robot_control/include/**",
+        "/home/kimm/wearable_robot_ws/install/ros2_socketcan/include/**",
+        "/home/kimm/wearable_robot_ws/install/ros2_socketcan_msgs/include/**",
+        "/opt/ros/foxy/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ros2",
+      "intelliSenseMode": "gcc-arm64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
